@@ -5,6 +5,9 @@ import styles from './styles.module.css'
 
 import NumericInput from 'react-numeric-input';
 
+import Web3 from 'web3'
+
+
 export class Home extends React.Component {
   static contextTypes = {
     router: T.object
@@ -27,6 +30,27 @@ export class Home extends React.Component {
   logout(){
     this.props.auth.logout()
     this.context.router.push('/login');
+  }
+
+  // init_web3(){
+  //   if (typeof web3 !== 'undefined') {
+  //     web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
+  //     alert('undefined web3');
+  //   } else {
+  //     // set the provider you want from Web3.providers
+  //     web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
+  //     alert('set the desired provider');
+  //   }
+  //   return web3;
+  // }
+
+  submit(){
+    // let web3 = init_web3();
+    var web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
+
+    
+
+    alert('submit');
   }
 
   render(){
@@ -94,7 +118,7 @@ export class Home extends React.Component {
             </div>
           </div>
 
-          <Button onClick={this.logout.bind(this)}>Submit Vote</Button>
+          <Button onClick={this.submit}>Submit</Button>
 
           <Button onClick={this.logout.bind(this)}>Logout</Button>
         </div>
