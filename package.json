@@ -71,7 +71,11 @@
     "react": "^15.3.1",
     "react-bootstrap": "^0.30.0-rc.1",
     "react-dom": "^15.3.1",
-    "react-router": "^2.8.0"
+    "react-dropdown": "^1.1.0",
+    "react-numeric-input": "^2.0.6",
+    "react-router": "^2.8.0",
+    "react-select": "^1.0.0-rc.2",
+    "web3": "^0.17.0-beta"
   },
   "bugs": {
     "url": "https://github.com/auth0-samples/auth0-react-sample/issues"
