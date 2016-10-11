@@ -2,7 +2,7 @@ import "./VotingForToken.sol";
 import "./VotingAgainstToken.sol";
 
 contract VotingTokenFactory {
-
+  
     mapping(address => address[]) public created;
     mapping(address => bool) public isVotingForToken; //verify without having to do a bytecode check.
     mapping(address => bool) public isVotingAgainstToken; //verify without having to do a bytecode check.
