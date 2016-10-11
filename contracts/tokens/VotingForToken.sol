@@ -1,7 +1,12 @@
 import "./HumanStandardToken.sol";
 
-contract VotingForToken {
-  function VotingForToken() {
-    // constructor
+contract VotingForToken is HumanStandardToken{
+  function VotingForToken() HumanStandardToken(
+      100,
+      "VotingForToken",
+      0,
+      "VFT"
+      ) {
+
   }
 }
