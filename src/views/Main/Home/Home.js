@@ -2,11 +2,9 @@ import React, { PropTypes as T } from 'react'
 import {Button} from 'react-bootstrap'
 import AuthService from 'utils/AuthService'
 import styles from './styles.module.css'
-
 import NumericInput from 'react-numeric-input';
 
 import Web3 from 'web3'
-
 
 export class Home extends React.Component {
   static contextTypes = {
@@ -48,7 +46,7 @@ export class Home extends React.Component {
     // let web3 = init_web3();
     var web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
 
-    
+
 
     alert('submit');
   }
