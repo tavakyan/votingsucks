@@ -1,8 +1,8 @@
-contract('VotingTokenFactory', function(accounts) {
+/*contract('VotingTokenFactory', function(accounts) {
   it("should create for and against tokens array", function(done) {
 
     // refactor to two factory classes
-    
+
     done();
     //
     // var factory = VotingTokenFactory.deployed();
@@ -40,3 +40,5 @@ contract('VotingTokenFactory', function(accounts) {
 
   });
 });
+
+*/
