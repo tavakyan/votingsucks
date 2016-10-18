@@ -5,7 +5,8 @@ module.exports = function(deployer) {
 
   deployer.deploy(VotingAgainstToken);
   deployer.deploy(VotingForToken);
-  
+
   deployer.deploy(VotingForTokenFactory);
   deployer.deploy(VotingAgainstTokenFactory);
+
 };

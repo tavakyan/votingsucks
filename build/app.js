@@ -26540,6 +26540,1040 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 
   Contract.new = function() {
     if (this.currentProvider == null) {
+      throw new Error("Candidate error: Please call setProvider() first before calling new().");
+    }
+
+    var args = Array.prototype.slice.call(arguments);
+
+    if (!this.unlinked_binary) {
+      throw new Error("Candidate error: contract binary not set. Can't deploy new instance.");
+    }
+
+    var regex = /__[^_]+_+/g;
+    var unlinked_libraries = this.binary.match(regex);
+
+    if (unlinked_libraries != null) {
+      unlinked_libraries = unlinked_libraries.map(function(name) {
+        // Remove underscores
+        return name.replace(/_/g, "");
+      }).sort().filter(function(name, index, arr) {
+        // Remove duplicates
+        if (index + 1 >= arr.length) {
+          return true;
+        }
+
+        return name != arr[index + 1];
+      }).join(", ");
+
+      throw new Error("Candidate contains unresolved libraries. You must deploy and link the following libraries before you can deploy a new version of Candidate: " + unlinked_libraries);
+    }
+
+    var self = this;
+
+    return new Promise(function(accept, reject) {
+      var contract_class = self.web3.eth.contract(self.abi);
+      var tx_params = {};
+      var last_arg = args[args.length - 1];
+
+      // It's only tx_params if it's an object and not a BigNumber.
+      if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+        tx_params = args.pop();
+      }
+
+      tx_params = Utils.merge(self.class_defaults, tx_params);
+
+      if (tx_params.data == null) {
+        tx_params.data = self.binary;
+      }
+
+      // web3 0.9.0 and above calls new twice this callback twice.
+      // Why, I have no idea...
+      var intermediary = function(err, web3_instance) {
+        if (err != null) {
+          reject(err);
+          return;
+        }
+
+        if (err == null && web3_instance != null && web3_instance.address != null) {
+          accept(new self(web3_instance));
+        }
+      };
+
+      args.push(tx_params, intermediary);
+      contract_class.new.apply(contract_class, args);
+    });
+  };
+
+  Contract.at = function(address) {
+    if (address == null || typeof address != "string" || address.length != 42) {
+      throw new Error("Invalid address passed to Candidate.at(): " + address);
+    }
+
+    var contract_class = this.web3.eth.contract(this.abi);
+    var contract = contract_class.at(address);
+
+    return new this(contract);
+  };
+
+  Contract.deployed = function() {
+    if (!this.address) {
+      throw new Error("Cannot find deployed address: Candidate not deployed or address not set.");
+    }
+
+    return this.at(this.address);
+  };
+
+  Contract.defaults = function(class_defaults) {
+    if (this.class_defaults == null) {
+      this.class_defaults = {};
+    }
+
+    if (class_defaults == null) {
+      class_defaults = {};
+    }
+
+    var self = this;
+    Object.keys(class_defaults).forEach(function(key) {
+      var value = class_defaults[key];
+      self.class_defaults[key] = value;
+    });
+
+    return this.class_defaults;
+  };
+
+  Contract.extend = function() {
+    var args = Array.prototype.slice.call(arguments);
+
+    for (var i = 0; i < arguments.length; i++) {
+      var object = arguments[i];
+      var keys = Object.keys(object);
+      for (var j = 0; j < keys.length; j++) {
+        var key = keys[j];
+        var value = object[key];
+        this.prototype[key] = value;
+      }
+    }
+  };
+
+  Contract.all_networks = {
+  "default": {
+    "abi": [
+      {
+        "constant": false,
+        "inputs": [],
+        "name": "getForTokenAmount",
+        "outputs": [
+          {
+            "name": "balance",
+            "type": "uint256"
+          }
+        ],
+        "type": "function"
+      },
+      {
+        "constant": false,
+        "inputs": [],
+        "name": "getAgainstTokenAmount",
+        "outputs": [
+          {
+            "name": "balance",
+            "type": "uint256"
+          }
+        ],
+        "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "name": "_id",
+            "type": "uint256"
+          },
+          {
+            "name": "_firstName",
+            "type": "string"
+          },
+          {
+            "name": "_lastName",
+            "type": "string"
+          }
+        ],
+        "type": "constructor"
+      }
+    ],
+    "unlinked_binary": "0x606060405260405161161838038061161883398101604052805160805160a0519192908101910160008381556001805484519282905290916020601f60026000196101008688161502019094169390930483018190047fb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf690810193909187019083901061012757805160ff19168380011785555b506101579291505b808211156101b0576000815560010161009b565b505060405161098a806101e4833901809050604051809103906000f0600360006101000a815481600160a060020a030219169083021790555060405161098a80610b6e833901809050604051809103906000f060048054600160a060020a031916919091179055505050610120806114f86000396000f35b82800160010185558215610093579182015b82811115610093578251826000505591602001919060010190610139565b50508060026000509080519060200190828054600181600116156101000203166002900490600052602060002090601f016020900481019282601f106101b457805160ff19168380011785555b506100af92915061009b565b5090565b828001600101855582156101a4579182015b828111156101a45782518260005055916020019190600101906101c65660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252600e81527f566f74696e67466f72546f6b656e00000000000000000000000000000000000060208281019182528351808501855260038082527f56465400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c75660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252601281527f566f74696e67416761696e7374546f6b656e000000000000000000000000000060208281019182528351808501855260038082527f56415400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c756606060405260e060020a60003504631a099a7a811461002657806379361f7a1461009c575b005b600354604080517f70a0823100000000000000000000000000000000000000000000000000000000815230600160a060020a039081166004830152915161010e9360009316916370a08231916024828101926020929190829003018187876161da5a03f115610002575050604051519150505b90565b61010e6000600460009054906101000a9004600160a060020a0316600160a060020a03166370a08231306040518260e060020a0281526004018082600160a060020a031681526020019150506020604051808303816000876161da5a03f1156100025750506040515191506100999050565b60408051918252519081900360200190f3",
+    "events": {},
+    "updated_at": 1476809043829,
+    "links": {},
+    "address": "0x5ea651d58b1aa4eb711cbacca4f5e2c4dc408fbd"
+  }
+};
+
+  Contract.checkNetwork = function(callback) {
+    var self = this;
+
+    if (this.network_id != null) {
+      return callback();
+    }
+
+    this.web3.version.network(function(err, result) {
+      if (err) return callback(err);
+
+      var network_id = result.toString();
+
+      // If we have the main network,
+      if (network_id == "1") {
+        var possible_ids = ["1", "live", "default"];
+
+        for (var i = 0; i < possible_ids.length; i++) {
+          var id = possible_ids[i];
+          if (Contract.all_networks[id] != null) {
+            network_id = id;
+            break;
+          }
+        }
+      }
+
+      if (self.all_networks[network_id] == null) {
+        return callback(new Error(self.name + " error: Can't find artifacts for network id '" + network_id + "'"));
+      }
+
+      self.setNetwork(network_id);
+      callback();
+    })
+  };
+
+  Contract.setNetwork = function(network_id) {
+    var network = this.all_networks[network_id] || {};
+
+    this.abi             = this.prototype.abi             = network.abi;
+    this.unlinked_binary = this.prototype.unlinked_binary = network.unlinked_binary;
+    this.address         = this.prototype.address         = network.address;
+    this.updated_at      = this.prototype.updated_at      = network.updated_at;
+    this.links           = this.prototype.links           = network.links || {};
+    this.events          = this.prototype.events          = network.events || {};
+
+    this.network_id = network_id;
+  };
+
+  Contract.networks = function() {
+    return Object.keys(this.all_networks);
+  };
+
+  Contract.link = function(name, address) {
+    if (typeof name == "function") {
+      var contract = name;
+
+      if (contract.address == null) {
+        throw new Error("Cannot link contract without an address.");
+      }
+
+      Contract.link(contract.contract_name, contract.address);
+
+      // Merge events so this contract knows about library's events
+      Object.keys(contract.events).forEach(function(topic) {
+        Contract.events[topic] = contract.events[topic];
+      });
+
+      return;
+    }
+
+    if (typeof name == "object") {
+      var obj = name;
+      Object.keys(obj).forEach(function(name) {
+        var a = obj[name];
+        Contract.link(name, a);
+      });
+      return;
+    }
+
+    Contract.links[name] = address;
+  };
+
+  Contract.contract_name   = Contract.prototype.contract_name   = "Candidate";
+  Contract.generated_with  = Contract.prototype.generated_with  = "3.2.0";
+
+  // Allow people to opt-in to breaking changes now.
+  Contract.next_gen = false;
+
+  var properties = {
+    binary: function() {
+      var binary = Contract.unlinked_binary;
+
+      Object.keys(Contract.links).forEach(function(library_name) {
+        var library_address = Contract.links[library_name];
+        var regex = new RegExp("__" + library_name + "_*", "g");
+
+        binary = binary.replace(regex, library_address.replace("0x", ""));
+      });
+
+      return binary;
+    }
+  };
+
+  Object.keys(properties).forEach(function(key) {
+    var getter = properties[key];
+
+    var definition = {};
+    definition.enumerable = true;
+    definition.configurable = false;
+    definition.get = getter;
+
+    Object.defineProperty(Contract, key, definition);
+    Object.defineProperty(Contract.prototype, key, definition);
+  });
+
+  bootstrap(Contract);
+
+  if (typeof module != "undefined" && typeof module.exports != "undefined") {
+    module.exports = Contract;
+  } else {
+    // There will only be one version of this contract in the browser,
+    // and we can use that.
+    window.Candidate = Contract;
+  }
+})();
+
+},{"web3":189,"web3/lib/web3/event.js":216}],136:[function(require,module,exports){
+var Web3 = require("web3");
+var SolidityEvent = require("web3/lib/web3/event.js");
+
+(function() {
+  // Planned for future features, logging, etc.
+  function Provider(provider) {
+    this.provider = provider;
+  }
+
+  Provider.prototype.send = function() {
+    this.provider.send.apply(this.provider, arguments);
+  };
+
+  Provider.prototype.sendAsync = function() {
+    this.provider.sendAsync.apply(this.provider, arguments);
+  };
+
+  var BigNumber = (new Web3()).toBigNumber(0).constructor;
+
+  var Utils = {
+    is_object: function(val) {
+      return typeof val == "object" && !Array.isArray(val);
+    },
+    is_big_number: function(val) {
+      if (typeof val != "object") return false;
+
+      // Instanceof won't work because we have multiple versions of Web3.
+      try {
+        new BigNumber(val);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    merge: function() {
+      var merged = {};
+      var args = Array.prototype.slice.call(arguments);
+
+      for (var i = 0; i < args.length; i++) {
+        var object = args[i];
+        var keys = Object.keys(object);
+        for (var j = 0; j < keys.length; j++) {
+          var key = keys[j];
+          var value = object[key];
+          merged[key] = value;
+        }
+      }
+
+      return merged;
+    },
+    promisifyFunction: function(fn, C) {
+      var self = this;
+      return function() {
+        var instance = this;
+
+        var args = Array.prototype.slice.call(arguments);
+        var tx_params = {};
+        var last_arg = args[args.length - 1];
+
+        // It's only tx_params if it's an object and not a BigNumber.
+        if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+          tx_params = args.pop();
+        }
+
+        tx_params = Utils.merge(C.class_defaults, tx_params);
+
+        return new Promise(function(accept, reject) {
+          var callback = function(error, result) {
+            if (error != null) {
+              reject(error);
+            } else {
+              accept(result);
+            }
+          };
+          args.push(tx_params, callback);
+          fn.apply(instance.contract, args);
+        });
+      };
+    },
+    synchronizeFunction: function(fn, instance, C) {
+      var self = this;
+      return function() {
+        var args = Array.prototype.slice.call(arguments);
+        var tx_params = {};
+        var last_arg = args[args.length - 1];
+
+        // It's only tx_params if it's an object and not a BigNumber.
+        if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+          tx_params = args.pop();
+        }
+
+        tx_params = Utils.merge(C.class_defaults, tx_params);
+
+        return new Promise(function(accept, reject) {
+
+          var decodeLogs = function(logs) {
+            return logs.map(function(log) {
+              var logABI = C.events[log.topics[0]];
+
+              if (logABI == null) {
+                return null;
+              }
+
+              var decoder = new SolidityEvent(null, logABI, instance.address);
+              return decoder.decode(log);
+            }).filter(function(log) {
+              return log != null;
+            });
+          };
+
+          var callback = function(error, tx) {
+            if (error != null) {
+              reject(error);
+              return;
+            }
+
+            var timeout = C.synchronization_timeout || 240000;
+            var start = new Date().getTime();
+
+            var make_attempt = function() {
+              C.web3.eth.getTransactionReceipt(tx, function(err, receipt) {
+                if (err) return reject(err);
+
+                if (receipt != null) {
+                  // If they've opted into next gen, return more information.
+                  if (C.next_gen == true) {
+                    return accept({
+                      tx: tx,
+                      receipt: receipt,
+                      logs: decodeLogs(receipt.logs)
+                    });
+                  } else {
+                    return accept(tx);
+                  }
+                }
+
+                if (timeout > 0 && new Date().getTime() - start > timeout) {
+                  return reject(new Error("Transaction " + tx + " wasn't processed in " + (timeout / 1000) + " seconds!"));
+                }
+
+                setTimeout(make_attempt, 1000);
+              });
+            };
+
+            make_attempt();
+          };
+
+          args.push(tx_params, callback);
+          fn.apply(self, args);
+        });
+      };
+    }
+  };
+
+  function instantiate(instance, contract) {
+    instance.contract = contract;
+    var constructor = instance.constructor;
+
+    // Provision our functions.
+    for (var i = 0; i < instance.abi.length; i++) {
+      var item = instance.abi[i];
+      if (item.type == "function") {
+        if (item.constant == true) {
+          instance[item.name] = Utils.promisifyFunction(contract[item.name], constructor);
+        } else {
+          instance[item.name] = Utils.synchronizeFunction(contract[item.name], instance, constructor);
+        }
+
+        instance[item.name].call = Utils.promisifyFunction(contract[item.name].call, constructor);
+        instance[item.name].sendTransaction = Utils.promisifyFunction(contract[item.name].sendTransaction, constructor);
+        instance[item.name].request = contract[item.name].request;
+        instance[item.name].estimateGas = Utils.promisifyFunction(contract[item.name].estimateGas, constructor);
+      }
+
+      if (item.type == "event") {
+        instance[item.name] = contract[item.name];
+      }
+    }
+
+    instance.allEvents = contract.allEvents;
+    instance.address = contract.address;
+    instance.transactionHash = contract.transactionHash;
+  };
+
+  // Use inheritance to create a clone of this contract,
+  // and copy over contract's static functions.
+  function mutate(fn) {
+    var temp = function Clone() { return fn.apply(this, arguments); };
+
+    Object.keys(fn).forEach(function(key) {
+      temp[key] = fn[key];
+    });
+
+    temp.prototype = Object.create(fn.prototype);
+    bootstrap(temp);
+    return temp;
+  };
+
+  function bootstrap(fn) {
+    fn.web3 = new Web3();
+    fn.class_defaults  = fn.prototype.defaults || {};
+
+    // Set the network iniitally to make default data available and re-use code.
+    // Then remove the saved network id so the network will be auto-detected on first use.
+    fn.setNetwork("default");
+    fn.network_id = null;
+    return fn;
+  };
+
+  // Accepts a contract object created with web3.eth.contract.
+  // Optionally, if called without `new`, accepts a network_id and will
+  // create a new version of the contract abstraction with that network_id set.
+  function Contract() {
+    if (this instanceof Contract) {
+      instantiate(this, arguments[0]);
+    } else {
+      var C = mutate(Contract);
+      var network_id = arguments.length > 0 ? arguments[0] : "default";
+      C.setNetwork(network_id);
+      return C;
+    }
+  };
+
+  Contract.currentProvider = null;
+
+  Contract.setProvider = function(provider) {
+    var wrapped = new Provider(provider);
+    this.web3.setProvider(wrapped);
+    this.currentProvider = provider;
+  };
+
+  Contract.new = function() {
+    if (this.currentProvider == null) {
+      throw new Error("CandidateRegistry error: Please call setProvider() first before calling new().");
+    }
+
+    var args = Array.prototype.slice.call(arguments);
+
+    if (!this.unlinked_binary) {
+      throw new Error("CandidateRegistry error: contract binary not set. Can't deploy new instance.");
+    }
+
+    var regex = /__[^_]+_+/g;
+    var unlinked_libraries = this.binary.match(regex);
+
+    if (unlinked_libraries != null) {
+      unlinked_libraries = unlinked_libraries.map(function(name) {
+        // Remove underscores
+        return name.replace(/_/g, "");
+      }).sort().filter(function(name, index, arr) {
+        // Remove duplicates
+        if (index + 1 >= arr.length) {
+          return true;
+        }
+
+        return name != arr[index + 1];
+      }).join(", ");
+
+      throw new Error("CandidateRegistry contains unresolved libraries. You must deploy and link the following libraries before you can deploy a new version of CandidateRegistry: " + unlinked_libraries);
+    }
+
+    var self = this;
+
+    return new Promise(function(accept, reject) {
+      var contract_class = self.web3.eth.contract(self.abi);
+      var tx_params = {};
+      var last_arg = args[args.length - 1];
+
+      // It's only tx_params if it's an object and not a BigNumber.
+      if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+        tx_params = args.pop();
+      }
+
+      tx_params = Utils.merge(self.class_defaults, tx_params);
+
+      if (tx_params.data == null) {
+        tx_params.data = self.binary;
+      }
+
+      // web3 0.9.0 and above calls new twice this callback twice.
+      // Why, I have no idea...
+      var intermediary = function(err, web3_instance) {
+        if (err != null) {
+          reject(err);
+          return;
+        }
+
+        if (err == null && web3_instance != null && web3_instance.address != null) {
+          accept(new self(web3_instance));
+        }
+      };
+
+      args.push(tx_params, intermediary);
+      contract_class.new.apply(contract_class, args);
+    });
+  };
+
+  Contract.at = function(address) {
+    if (address == null || typeof address != "string" || address.length != 42) {
+      throw new Error("Invalid address passed to CandidateRegistry.at(): " + address);
+    }
+
+    var contract_class = this.web3.eth.contract(this.abi);
+    var contract = contract_class.at(address);
+
+    return new this(contract);
+  };
+
+  Contract.deployed = function() {
+    if (!this.address) {
+      throw new Error("Cannot find deployed address: CandidateRegistry not deployed or address not set.");
+    }
+
+    return this.at(this.address);
+  };
+
+  Contract.defaults = function(class_defaults) {
+    if (this.class_defaults == null) {
+      this.class_defaults = {};
+    }
+
+    if (class_defaults == null) {
+      class_defaults = {};
+    }
+
+    var self = this;
+    Object.keys(class_defaults).forEach(function(key) {
+      var value = class_defaults[key];
+      self.class_defaults[key] = value;
+    });
+
+    return this.class_defaults;
+  };
+
+  Contract.extend = function() {
+    var args = Array.prototype.slice.call(arguments);
+
+    for (var i = 0; i < arguments.length; i++) {
+      var object = arguments[i];
+      var keys = Object.keys(object);
+      for (var j = 0; j < keys.length; j++) {
+        var key = keys[j];
+        var value = object[key];
+        this.prototype[key] = value;
+      }
+    }
+  };
+
+  Contract.all_networks = {
+  "default": {
+    "abi": [
+      {
+        "constant": false,
+        "inputs": [
+          {
+            "name": "id",
+            "type": "uint256"
+          }
+        ],
+        "name": "getCandidate",
+        "outputs": [
+          {
+            "name": "",
+            "type": "address"
+          }
+        ],
+        "type": "function"
+      },
+      {
+        "inputs": [],
+        "type": "constructor"
+      }
+    ],
+    "unlinked_binary": "0x60606040526000805460ff19169055605d80601a6000396000f3606060405260e060020a600035046335b8e8208114601a575b005b602d600435600060038211156037576002565b6060908152602090f35b9081526001602052604090205473ffffffffffffffffffffffffffffffffffffffff169056",
+    "events": {},
+    "updated_at": 1476809043826,
+    "links": {},
+    "address": "0xb5ad3c0e4fe48771d14ebfd418be8477617a3288"
+  }
+};
+
+  Contract.checkNetwork = function(callback) {
+    var self = this;
+
+    if (this.network_id != null) {
+      return callback();
+    }
+
+    this.web3.version.network(function(err, result) {
+      if (err) return callback(err);
+
+      var network_id = result.toString();
+
+      // If we have the main network,
+      if (network_id == "1") {
+        var possible_ids = ["1", "live", "default"];
+
+        for (var i = 0; i < possible_ids.length; i++) {
+          var id = possible_ids[i];
+          if (Contract.all_networks[id] != null) {
+            network_id = id;
+            break;
+          }
+        }
+      }
+
+      if (self.all_networks[network_id] == null) {
+        return callback(new Error(self.name + " error: Can't find artifacts for network id '" + network_id + "'"));
+      }
+
+      self.setNetwork(network_id);
+      callback();
+    })
+  };
+
+  Contract.setNetwork = function(network_id) {
+    var network = this.all_networks[network_id] || {};
+
+    this.abi             = this.prototype.abi             = network.abi;
+    this.unlinked_binary = this.prototype.unlinked_binary = network.unlinked_binary;
+    this.address         = this.prototype.address         = network.address;
+    this.updated_at      = this.prototype.updated_at      = network.updated_at;
+    this.links           = this.prototype.links           = network.links || {};
+    this.events          = this.prototype.events          = network.events || {};
+
+    this.network_id = network_id;
+  };
+
+  Contract.networks = function() {
+    return Object.keys(this.all_networks);
+  };
+
+  Contract.link = function(name, address) {
+    if (typeof name == "function") {
+      var contract = name;
+
+      if (contract.address == null) {
+        throw new Error("Cannot link contract without an address.");
+      }
+
+      Contract.link(contract.contract_name, contract.address);
+
+      // Merge events so this contract knows about library's events
+      Object.keys(contract.events).forEach(function(topic) {
+        Contract.events[topic] = contract.events[topic];
+      });
+
+      return;
+    }
+
+    if (typeof name == "object") {
+      var obj = name;
+      Object.keys(obj).forEach(function(name) {
+        var a = obj[name];
+        Contract.link(name, a);
+      });
+      return;
+    }
+
+    Contract.links[name] = address;
+  };
+
+  Contract.contract_name   = Contract.prototype.contract_name   = "CandidateRegistry";
+  Contract.generated_with  = Contract.prototype.generated_with  = "3.2.0";
+
+  // Allow people to opt-in to breaking changes now.
+  Contract.next_gen = false;
+
+  var properties = {
+    binary: function() {
+      var binary = Contract.unlinked_binary;
+
+      Object.keys(Contract.links).forEach(function(library_name) {
+        var library_address = Contract.links[library_name];
+        var regex = new RegExp("__" + library_name + "_*", "g");
+
+        binary = binary.replace(regex, library_address.replace("0x", ""));
+      });
+
+      return binary;
+    }
+  };
+
+  Object.keys(properties).forEach(function(key) {
+    var getter = properties[key];
+
+    var definition = {};
+    definition.enumerable = true;
+    definition.configurable = false;
+    definition.get = getter;
+
+    Object.defineProperty(Contract, key, definition);
+    Object.defineProperty(Contract.prototype, key, definition);
+  });
+
+  bootstrap(Contract);
+
+  if (typeof module != "undefined" && typeof module.exports != "undefined") {
+    module.exports = Contract;
+  } else {
+    // There will only be one version of this contract in the browser,
+    // and we can use that.
+    window.CandidateRegistry = Contract;
+  }
+})();
+
+},{"web3":189,"web3/lib/web3/event.js":216}],137:[function(require,module,exports){
+var Web3 = require("web3");
+var SolidityEvent = require("web3/lib/web3/event.js");
+
+(function() {
+  // Planned for future features, logging, etc.
+  function Provider(provider) {
+    this.provider = provider;
+  }
+
+  Provider.prototype.send = function() {
+    this.provider.send.apply(this.provider, arguments);
+  };
+
+  Provider.prototype.sendAsync = function() {
+    this.provider.sendAsync.apply(this.provider, arguments);
+  };
+
+  var BigNumber = (new Web3()).toBigNumber(0).constructor;
+
+  var Utils = {
+    is_object: function(val) {
+      return typeof val == "object" && !Array.isArray(val);
+    },
+    is_big_number: function(val) {
+      if (typeof val != "object") return false;
+
+      // Instanceof won't work because we have multiple versions of Web3.
+      try {
+        new BigNumber(val);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    merge: function() {
+      var merged = {};
+      var args = Array.prototype.slice.call(arguments);
+
+      for (var i = 0; i < args.length; i++) {
+        var object = args[i];
+        var keys = Object.keys(object);
+        for (var j = 0; j < keys.length; j++) {
+          var key = keys[j];
+          var value = object[key];
+          merged[key] = value;
+        }
+      }
+
+      return merged;
+    },
+    promisifyFunction: function(fn, C) {
+      var self = this;
+      return function() {
+        var instance = this;
+
+        var args = Array.prototype.slice.call(arguments);
+        var tx_params = {};
+        var last_arg = args[args.length - 1];
+
+        // It's only tx_params if it's an object and not a BigNumber.
+        if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+          tx_params = args.pop();
+        }
+
+        tx_params = Utils.merge(C.class_defaults, tx_params);
+
+        return new Promise(function(accept, reject) {
+          var callback = function(error, result) {
+            if (error != null) {
+              reject(error);
+            } else {
+              accept(result);
+            }
+          };
+          args.push(tx_params, callback);
+          fn.apply(instance.contract, args);
+        });
+      };
+    },
+    synchronizeFunction: function(fn, instance, C) {
+      var self = this;
+      return function() {
+        var args = Array.prototype.slice.call(arguments);
+        var tx_params = {};
+        var last_arg = args[args.length - 1];
+
+        // It's only tx_params if it's an object and not a BigNumber.
+        if (Utils.is_object(last_arg) && !Utils.is_big_number(last_arg)) {
+          tx_params = args.pop();
+        }
+
+        tx_params = Utils.merge(C.class_defaults, tx_params);
+
+        return new Promise(function(accept, reject) {
+
+          var decodeLogs = function(logs) {
+            return logs.map(function(log) {
+              var logABI = C.events[log.topics[0]];
+
+              if (logABI == null) {
+                return null;
+              }
+
+              var decoder = new SolidityEvent(null, logABI, instance.address);
+              return decoder.decode(log);
+            }).filter(function(log) {
+              return log != null;
+            });
+          };
+
+          var callback = function(error, tx) {
+            if (error != null) {
+              reject(error);
+              return;
+            }
+
+            var timeout = C.synchronization_timeout || 240000;
+            var start = new Date().getTime();
+
+            var make_attempt = function() {
+              C.web3.eth.getTransactionReceipt(tx, function(err, receipt) {
+                if (err) return reject(err);
+
+                if (receipt != null) {
+                  // If they've opted into next gen, return more information.
+                  if (C.next_gen == true) {
+                    return accept({
+                      tx: tx,
+                      receipt: receipt,
+                      logs: decodeLogs(receipt.logs)
+                    });
+                  } else {
+                    return accept(tx);
+                  }
+                }
+
+                if (timeout > 0 && new Date().getTime() - start > timeout) {
+                  return reject(new Error("Transaction " + tx + " wasn't processed in " + (timeout / 1000) + " seconds!"));
+                }
+
+                setTimeout(make_attempt, 1000);
+              });
+            };
+
+            make_attempt();
+          };
+
+          args.push(tx_params, callback);
+          fn.apply(self, args);
+        });
+      };
+    }
+  };
+
+  function instantiate(instance, contract) {
+    instance.contract = contract;
+    var constructor = instance.constructor;
+
+    // Provision our functions.
+    for (var i = 0; i < instance.abi.length; i++) {
+      var item = instance.abi[i];
+      if (item.type == "function") {
+        if (item.constant == true) {
+          instance[item.name] = Utils.promisifyFunction(contract[item.name], constructor);
+        } else {
+          instance[item.name] = Utils.synchronizeFunction(contract[item.name], instance, constructor);
+        }
+
+        instance[item.name].call = Utils.promisifyFunction(contract[item.name].call, constructor);
+        instance[item.name].sendTransaction = Utils.promisifyFunction(contract[item.name].sendTransaction, constructor);
+        instance[item.name].request = contract[item.name].request;
+        instance[item.name].estimateGas = Utils.promisifyFunction(contract[item.name].estimateGas, constructor);
+      }
+
+      if (item.type == "event") {
+        instance[item.name] = contract[item.name];
+      }
+    }
+
+    instance.allEvents = contract.allEvents;
+    instance.address = contract.address;
+    instance.transactionHash = contract.transactionHash;
+  };
+
+  // Use inheritance to create a clone of this contract,
+  // and copy over contract's static functions.
+  function mutate(fn) {
+    var temp = function Clone() { return fn.apply(this, arguments); };
+
+    Object.keys(fn).forEach(function(key) {
+      temp[key] = fn[key];
+    });
+
+    temp.prototype = Object.create(fn.prototype);
+    bootstrap(temp);
+    return temp;
+  };
+
+  function bootstrap(fn) {
+    fn.web3 = new Web3();
+    fn.class_defaults  = fn.prototype.defaults || {};
+
+    // Set the network iniitally to make default data available and re-use code.
+    // Then remove the saved network id so the network will be auto-detected on first use.
+    fn.setNetwork("default");
+    fn.network_id = null;
+    return fn;
+  };
+
+  // Accepts a contract object created with web3.eth.contract.
+  // Optionally, if called without `new`, accepts a network_id and will
+  // create a new version of the contract abstraction with that network_id set.
+  function Contract() {
+    if (this instanceof Contract) {
+      instantiate(this, arguments[0]);
+    } else {
+      var C = mutate(Contract);
+      var network_id = arguments.length > 0 ? arguments[0] : "default";
+      C.setNetwork(network_id);
+      return C;
+    }
+  };
+
+  Contract.currentProvider = null;
+
+  Contract.setProvider = function(provider) {
+    var wrapped = new Provider(provider);
+    this.web3.setProvider(wrapped);
+    this.currentProvider = provider;
+  };
+
+  Contract.new = function() {
+    if (this.currentProvider == null) {
       throw new Error("ConvertLib error: Please call setProvider() first before calling new().");
     }
 
@@ -26682,9 +27716,9 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x606060405260358060106000396000f36503063fc68da550606060405260e060020a600035046396e4ee3d81146024575b6007565b602435600435026060908152602090f3",
     "events": {},
-    "updated_at": 1476677721031,
+    "updated_at": 1476809043831,
     "links": {},
-    "address": "0xc623a8b09710e7c7d58daaf7ab4b4db04e7a13f7"
+    "address": "0xd3e71dc99f5bcd14fc174e40f004a45a79f63567"
   }
 };
 
@@ -26813,7 +27847,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],136:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],138:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -27468,7 +28502,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476686470197,
+    "updated_at": 1476809043835,
     "links": {}
   }
 };
@@ -27598,7 +28632,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],137:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],139:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -28053,7 +29087,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x600c60609081527f56657269667920546f6b656e000000000000000000000000000000000000000060805260e06040819052600360a08181527f565458000000000000000000000000000000000000000000000000000000000060c0526000936101a6936127109391929086908190869086908690869061095b8061123c833990810185815261012082018490526080610100830181815286516101608501528651929390926101408201926101809092019190808381848e6004600f6020601f8601048f0201f150905090810190601f1680156100f15780820380516001836020036101000a031916815260200191505b508381038252848181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561014a5780820380516001836020036101000a031916815260200191505b509650505050505050604051809103906000f0600160a060020a03331660009081526020819052604090208054600181018083559293509091828183801582901161028a5760008381526020902061028a918101908301610231565b90506101df8160408051602081810183526000918290528251843b603f8101601f19168201909452838152929182918401853c50919050565b60026000509080519060200190828054600181600116156101000203166002900490600052602060002090601f016020900481019282601f1061024557805160ff19168380011785555b506102759291505b808211156102865760008155600101610231565b82800160010185558215610229579182015b82811115610229578251826000505591602001919060010190610257565b505050610f05806103376000396000f35b5090565b50505060009283525060208083209091018054600160a060020a03191684179055600160a060020a0383811680845260018084526040808620805460ff191690921790915580517fa9059cbb000000000000000000000000000000000000000000000000000000008152339093166004840152602483018b905251909363a9059cbb936044808501949193929183900301908290876161da5a03f11561000257509197965050505050505056606060405260e060020a600035046308216c0f81146100475780635f8dead314610220578063acad94ae1461025c578063ddea6df3146102b7578063fc94dd18146102d2575b005b60408051602060248035600481810135601f8101859004850286018501909652858552610321958135959194604494929390920191819084018382808284375050604080516020606435808b0135601f81018390048302840183019094528383529799983598976084975091955060249190910193509091508190840183828082843750949650505050505050600060008585858560405161095b806105aa83390180858152602001806020018460ff168152602001806020018381038352868181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156101595780820380516001836020036101000a031916815260200191505b508381038252848181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156101b25780820380516001836020036101000a031916815260200191505b509650505050505050604051809103906000f033600160a060020a03166000908152602081905260409020805460018101808355929350909182818380158290116103bf578183600052602060002091820191016103bf91905b80821115610479576000815560010161020c565b61032160043560243560006020819052828152604090208054829081101561000257506000908152602090200154600160a060020a0316905081565b6040805160028054602060018216156101000260001901909116829004601f810182900482028401820190945283835261033d93908301828280156104a85780601f1061047d576101008083540402835291602001916104a8565b6103ab60043560016020526000908152604090205460ff1681565b6103ab6004356040805160208101909152600080825290816104bc8460408051602081810183526000918290528251843b603f8101601f19168201909452838152929182918401853c50919050565b60408051600160a060020a039092168252519081900360200190f35b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561039d5780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b5050506000928352506020808320909101805473ffffffffffffffffffffffffffffffffffffffff191684179055600160a060020a0380841680845260018084526040808620805460ff191690921790915580517fa9059cbb000000000000000000000000000000000000000000000000000000008152339093166004840152602483018b905251909363a9059cbb936044808501949193929183900301908290876161da5a03f115610002575091979650505050505050565b5090565b820191906000526020600020905b81548152906001019060200180831161048b57829003601f168201915b505050505081565b600192505b5050919050565b600280548251929450600019610100600183161502011604146104e257600092506104b5565b5060005b81518110156104b05760028054829060001961010060018316150201168290048110156100025781546001161561052c5790600052602060002090602091828204019190065b9054901a60f860020a027effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff19168282815181101561000257016020015160f860020a90819004027fff0000000000000000000000000000000000000000000000000000000000000016146105a257600092506104b5565b6001016104e65660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b8082111561018357600081556001016100a1565b505060405161095b38038061095b83398101604052808051906020019091908051820191906020018051906020019091908051820191906020015050600160a060020a03331660009081526001602081815260408320879055868355855160038054948190529360029381161561010002600019011692909204601f9081018290047fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b908101939290919088019083901061018757805160ff19168380011785555b506101b79291506100a1565b5090565b82800160010185558215610177579182015b82811115610177578251826000505591602001919060010190610199565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061023957805160ff19168380011785555b506102699291506100a1565b8280016001018555821561022d579182015b8281111561022d57825182600050559160200191906001019061024b565b5050505050506106de8061027d6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c75660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b8082111561018357600081556001016100a1565b505060405161095b38038061095b83398101604052808051906020019091908051820191906020018051906020019091908051820191906020015050600160a060020a03331660009081526001602081815260408320879055868355855160038054948190529360029381161561010002600019011692909204601f9081018290047fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b908101939290919088019083901061018757805160ff19168380011785555b506101b79291506100a1565b5090565b82800160010185558215610177579182015b82811115610177578251826000505591602001919060010190610199565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061023957805160ff19168380011785555b506102699291506100a1565b8280016001018555821561022d579182015b8281111561022d57825182600050559160200191906001019061024b565b5050505050506106de8061027d6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c756",
     "events": {},
-    "updated_at": 1476677721042,
+    "updated_at": 1476809043838,
     "links": {}
   }
 };
@@ -28183,7 +29217,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],138:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],140:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -28642,11 +29676,11 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476677721049,
+    "updated_at": 1476809043843,
     "links": {
-      "ConvertLib": "0xc623a8b09710e7c7d58daaf7ab4b4db04e7a13f7"
+      "ConvertLib": "0xd3e71dc99f5bcd14fc174e40f004a45a79f63567"
     },
-    "address": "0x8251fee4a592784906d735ed9d29a08557da2820"
+    "address": "0xa06a642d57606d675542a538f1c82d58febf965f"
   }
 };
 
@@ -28775,7 +29809,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],139:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],141:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -29182,8 +30216,8 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x606060405260008054600160a060020a03191633179055610130806100246000396000f3606060405260e060020a60003504630900f010811461003c578063445df0ac146100c05780638da5cb5b146100c9578063fdacd576146100db575b005b61003a60043560008054600160a060020a039081163390911614156100bc57604080516001547ffdacd576000000000000000000000000000000000000000000000000000000008252600482015290518392600160a060020a0384169263fdacd5769260248281019392829003018183876161da5a03f115610002575050505b5050565b61010160015481565b610113600054600160a060020a031681565b61003a60043560005433600160a060020a03908116911614156100fe5760018190555b50565b60408051918252519081900360200190f35b60408051600160a060020a03929092168252519081900360200190f3",
     "events": {},
-    "updated_at": 1476677721044,
-    "address": "0xeed36e7da41ccf03f01825fbbd35b08bbd167eb9",
+    "updated_at": 1476809043845,
+    "address": "0x6cbd5adc4778070cb886ed3500eca26741c3e6f0",
     "links": {}
   }
 };
@@ -29313,7 +30347,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],140:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],142:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -29765,7 +30799,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476677721052,
+    "updated_at": 1476809043850,
     "links": {}
   }
 };
@@ -29895,7 +30929,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],141:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],143:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -30249,7 +31283,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     "abi": [],
     "unlinked_binary": "0x606060405260108060106000396000f360606040523615600a575b6000600256",
     "events": {},
-    "updated_at": 1476677721054,
+    "updated_at": 1476809043848,
     "links": {}
   }
 };
@@ -30379,7 +31413,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],142:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],144:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -30940,7 +31974,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476686470202,
+    "updated_at": 1476809043853,
     "links": {}
   }
 };
@@ -31070,7 +32104,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],143:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],145:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -31424,7 +32458,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     "abi": [],
     "unlinked_binary": "0x606060405260068060106000396000f3606060405200",
     "events": {},
-    "updated_at": 1476677721059,
+    "updated_at": 1476809043855,
     "links": {}
   }
 };
@@ -31554,7 +32588,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],144:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],146:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -32114,7 +33148,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476686470206,
+    "updated_at": 1476809043858,
     "links": {}
   }
 };
@@ -32244,7 +33278,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],145:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],147:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -32611,7 +33645,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x606060405260428060106000396000f3606060405260e060020a600035046382edaf948114601a575b005b603860005473ffffffffffffffffffffffffffffffffffffffff1681565b6060908152602090f3",
     "events": {},
-    "updated_at": 1476677721063,
+    "updated_at": 1476809043863,
     "links": {}
   }
 };
@@ -32741,7 +33775,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],146:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],148:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -33379,9 +34413,9 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476677721066,
+    "updated_at": 1476809043861,
     "links": {},
-    "address": "0x89d894295fcf1dcc08bd0fdabcf630d22c65e867"
+    "address": "0xab303084ce6ac478597b5d50d798cd9fc70972bd"
   }
 };
 
@@ -33510,7 +34544,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],147:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],149:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -33919,9 +34953,9 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x6060604052610bb4806100126000396000f3606060405260e060020a60003504635f8dead3811461003157806378b188a41461006d578063efc81a8c14610088575b005b6100fb60043560243560006020819052828152604090208054829081101561000257506000908152602090200154600160a060020a0316905081565b61011860043560016020526000908152604090205460ff1681565b6100fb6000600060405161098a8061022a833901809050604051809103906000f0600160a060020a033316909152602082905260408220805460018101808355828183801582901161012c5760008381526020902061012c9181019083015b8082111561022657600081556001016100e7565b60408051600160a060020a03929092168252519081900360200190f35b604080519115158252519081900360200190f35b5050506000928352506020808320909101805473ffffffffffffffffffffffffffffffffffffffff191684179055600160a060020a0383811680845260018084526040808620805460ff191690921790915580517fa9059cbb0000000000000000000000000000000000000000000000000000000081523390931660048401526064602484015251909363a9059cbb936044808501949193929183900301908290876161da5a03f11561000257505060405151151590506102225760006001600050600083600160a060020a0316815260200190815260200160002060006101000a81548160ff02191690830217905550610002565b8091505b50905660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252601281527f566f74696e67416761696e7374546f6b656e000000000000000000000000000060208281019182528351808501855260038082527f56415400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c756",
     "events": {},
-    "updated_at": 1476677721068,
+    "updated_at": 1476809043865,
     "links": {},
-    "address": "0x6c626ccfd0a371b267cb2049b7852864fffa68af"
+    "address": "0x017e47b89c89930931a0d47f9b032669b7fb139e"
   }
 };
 
@@ -34050,7 +35084,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],148:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],150:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -34688,9 +35722,9 @@ var SolidityEvent = require("web3/lib/web3/event.js");
         "type": "event"
       }
     },
-    "updated_at": 1476686470210,
+    "updated_at": 1476809043869,
     "links": {},
-    "address": "0x2cc7fb380a90526729a85bb008279d6ac6f0d130"
+    "address": "0x7045c546a99f59b071601fe0a1fa9edd4f43d9b8"
   }
 };
 
@@ -34819,7 +35853,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],149:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],151:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -35228,9 +36262,9 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x6060604052610b70806100126000396000f3606060405260e060020a60003504635f8dead381146100315780636be925e61461006d578063efc81a8c14610088575b005b6100fb60043560243560006020819052828152604090208054829081101561000257506000908152602090200154600160a060020a0316905081565b61011860043560016020526000908152604090205460ff1681565b6100fb6000600060405161098a806101e6833901809050604051809103906000f0600160a060020a033316909152602082905260408220805460018101808355828183801582901161012c5760008381526020902061012c9181019083015b808211156101e257600081556001016100e7565b60408051600160a060020a03929092168252519081900360200190f35b604080519115158252519081900360200190f35b5050506000928352506020808320909101805473ffffffffffffffffffffffffffffffffffffffff191684179055600160a060020a0383811680845260018084526040808620805460ff191690921790915580517fa9059cbb0000000000000000000000000000000000000000000000000000000081523390931660048401526064602484015251909363a9059cbb936044808501949193929183900301908290876161da5a03f1156100025750919250829150505b50905660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252600e81527f566f74696e67466f72546f6b656e00000000000000000000000000000000000060208281019182528351808501855260038082527f56465400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c756",
     "events": {},
-    "updated_at": 1476686470213,
+    "updated_at": 1476809043871,
     "links": {},
-    "address": "0x43cb22c69f425520a10a85e9bbffab1be0001cc5"
+    "address": "0xf0b0e536ac3c8fea209648ed53ffb906ed427d44"
   }
 };
 
@@ -35359,7 +36393,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],150:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],152:[function(require,module,exports){
 var Web3 = require("web3");
 var SolidityEvent = require("web3/lib/web3/event.js");
 
@@ -35785,7 +36819,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     ],
     "unlinked_binary": "0x606060405261163e806100126000396000f3606060405260e060020a6000350463395d8cbe811461003c5780635f8dead3146100cd5780636be925e61461010b57806378b188a414610126575b005b61014160006000600060405161098a8061032a833901809050604051809103906000f0915060405161098a80610cb4833901809050604051809103906000f033600160a060020a03169091526020839052604083208054600181018083558281838015829011610171576000838152602090206101719181019083015b808211156101e057600081556001016100b9565b61014160043560243560006020819052828152604090208054829081101561000257600091825260209091200154600160a060020a03169150829050565b61015d60043560016020526000908152604090205460ff1681565b61015d60043560026020526000908152604090205460ff1681565b60408051600160a060020a039092168252519081900360200190f35b604080519115158252519081900360200190f35b5050506000928352506020808320909101805473ffffffffffffffffffffffffffffffffffffffff19168517905533600160a060020a031682528190526040902080546001810180835582818380158290116101e4578183600052602060002091820191016101e491906100b9565b5090565b5050506000928352506020808320909101805473ffffffffffffffffffffffffffffffffffffffff191684179055600160a060020a0384811680845260018084526040808620805460ff19908116841790915587851687526002865281872080549190911690921790915580517fa9059cbb0000000000000000000000000000000000000000000000000000000081523390931660048401526064602484015251909363a9059cbb936044848101949193929183900301908290876161da5a03f11561000257505060405151151590506102bd57610002565b80600160a060020a031663a9059cbb3360646040518360e060020a0281526004018083600160a060020a03168152602001828152602001925050506020604051808303816000876161da5a03f115610002575050604051511515905061032257610002565b3392505050905660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252600e81527f566f74696e67466f72546f6b656e00000000000000000000000000000000000060208281019182528351808501855260038082527f56465400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c75660a060405260046060527f48302e31000000000000000000000000000000000000000000000000000000006080526006805460008290527f48302e310000000000000000000000000000000000000000000000000000000882556100b5907ff652222313e28459528d920b65115c16c04f3efc82aaedc97be59f3f377c0d3f602060026001841615610100026000190190931692909204601f01919091048101905b808211156101b257600081556001016100a1565b5050604080518082018252601281527f566f74696e67416761696e7374546f6b656e000000000000000000000000000060208281019182528351808501855260038082527f56415400000000000000000000000000000000000000000000000000000000008284015233600160a060020a0316600090815260018085529681206064908190558082558651835484845291989296949593947fc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b600294841615610100026000190190931693909304601f908101949094048201939092908390106101b657805160ff19168380011785555b506101e69291506100a1565b5090565b828001600101855582156101a6579182015b828111156101a65782518260005055916020019190600101906101c8565b50506004805460ff191683179055805160058054600082905290917f036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0602060026001851615610100026000190190941693909304601f90810184900482019386019083901061026857805160ff19168380011785555b506102989291506100a1565b8280016001018555821561025c579182015b8281111561025c57825182600050559160200191906001019061027a565b5050505050506106de806102ac6000396000f36060604052361561008d5760e060020a600035046306fdde038114610095578063095ea7b3146100f357806318160ddd1461016857806323b872dd14610171578063313ce5671461025e57806354fd4d501461026a57806370a08231146102c857806395d89b41146102f6578063a9059cbb14610354578063cae9ca51146103fb578063dd62ed3e146105c2575b6105f6610002565b6040805160038054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03908116600081815260026020908152604080832094871680845294825280832086905580518681529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a35060015b92915050565b6102e460005481565b610666600435602435604435600160a060020a0383166000908152600160205260408120548290108015906101c4575060026020908152604080832033600160a060020a03168452909152812054829010155b80156101d05750600082115b156106c357600160a060020a03838116600081815260016020908152604080832080548801905588851680845281842080548990039055600283528184203390961684529482529182902080548790039055815186815291519293927fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef9281900390910190a35060016106c7565b61067a60045460ff1681565b6040805160068054602060026001831615610100026000190190921691909104601f81018290048202840182019094528383526105f893908301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b600160a060020a03600435166000908152600160205260409020545b60408051918252519081900360200190f35b6105f86005805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156106bb5780601f10610690576101008083540402835291602001916106bb565b61066660043560243533600160a060020a03166000908152600160205260408120548290108015906103865750600082115b156106ce5733600160a060020a03908116600081815260016020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a3506001610162565b604080516020604435600481810135601f810184900484028501840190955284845261066694813594602480359593946064949293910191819084018382808284375094965050505050505033600160a060020a03908116600081815260026020908152604080832094881680845294825280832087905580518781529051929493927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925929181900390910190a383600160a060020a031660405180807f72656365697665417070726f76616c28616464726573732c75696e743235362c81526020017f616464726573732c627974657329000000000000000000000000000000000000815260200150602e019050604051809103902060e060020a9004338530866040518560e060020a0281526004018085600160a060020a0316815260200184815260200183600160a060020a031681526020018280519060200190808383829060006004602084601f0104600302600f01f150905090810190601f16801561059a5780820380516001836020036101000a031916815260200191505b509450505050506000604051808303816000876161da5a03f19250505015156106d657610002565b6102e4600435602435600160a060020a03828116600090815260026020908152604080832093851683529290522054610162565b005b60405180806020018281038252838181518152602001915080519060200190808383829060006004602084601f0104600302600f01f150905090810190601f1680156106585780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b604080519115158252519081900360200190f35b6040805160ff9092168252519081900360200190f35b820191906000526020600020905b81548152906001019060200180831161069e57829003601f168201915b505050505081565b5060005b9392505050565b506000610162565b5060016106c756",
     "events": {},
-    "updated_at": 1476677721074,
+    "updated_at": 1476808998928,
     "links": {},
     "address": "0x7e670a250bbee7d373a4452d1ccb06e8cac0544b"
   }
@@ -35916,7 +36950,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
   }
 })();
 
-},{"web3":187,"web3/lib/web3/event.js":214}],151:[function(require,module,exports){
+},{"web3":189,"web3/lib/web3/event.js":216}],153:[function(require,module,exports){
 /*! bignumber.js v2.0.7 https://github.com/MikeMcl/bignumber.js/LICENCE */
 
 ;(function (global) {
@@ -38601,7 +39635,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
     }
 })(this);
 
-},{"crypto":54}],152:[function(require,module,exports){
+},{"crypto":54}],154:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -38829,7 +39863,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.AES;
 
 }));
-},{"./cipher-core":153,"./core":154,"./enc-base64":155,"./evpkdf":157,"./md5":162}],153:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156,"./enc-base64":157,"./evpkdf":159,"./md5":164}],155:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -39705,7 +40739,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 
 
 }));
-},{"./core":154}],154:[function(require,module,exports){
+},{"./core":156}],156:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -40448,7 +41482,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS;
 
 }));
-},{}],155:[function(require,module,exports){
+},{}],157:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -40573,7 +41607,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.enc.Base64;
 
 }));
-},{"./core":154}],156:[function(require,module,exports){
+},{"./core":156}],158:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -40723,7 +41757,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.enc.Utf16;
 
 }));
-},{"./core":154}],157:[function(require,module,exports){
+},{"./core":156}],159:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -40856,7 +41890,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.EvpKDF;
 
 }));
-},{"./core":154,"./hmac":159,"./sha1":178}],158:[function(require,module,exports){
+},{"./core":156,"./hmac":161,"./sha1":180}],160:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -40923,7 +41957,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.format.Hex;
 
 }));
-},{"./cipher-core":153,"./core":154}],159:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],161:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41067,7 +42101,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 
 
 }));
-},{"./core":154}],160:[function(require,module,exports){
+},{"./core":156}],162:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41086,7 +42120,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS;
 
 }));
-},{"./aes":152,"./cipher-core":153,"./core":154,"./enc-base64":155,"./enc-utf16":156,"./evpkdf":157,"./format-hex":158,"./hmac":159,"./lib-typedarrays":161,"./md5":162,"./mode-cfb":163,"./mode-ctr":165,"./mode-ctr-gladman":164,"./mode-ecb":166,"./mode-ofb":167,"./pad-ansix923":168,"./pad-iso10126":169,"./pad-iso97971":170,"./pad-nopadding":171,"./pad-zeropadding":172,"./pbkdf2":173,"./rabbit":175,"./rabbit-legacy":174,"./rc4":176,"./ripemd160":177,"./sha1":178,"./sha224":179,"./sha256":180,"./sha3":181,"./sha384":182,"./sha512":183,"./tripledes":184,"./x64-core":185}],161:[function(require,module,exports){
+},{"./aes":154,"./cipher-core":155,"./core":156,"./enc-base64":157,"./enc-utf16":158,"./evpkdf":159,"./format-hex":160,"./hmac":161,"./lib-typedarrays":163,"./md5":164,"./mode-cfb":165,"./mode-ctr":167,"./mode-ctr-gladman":166,"./mode-ecb":168,"./mode-ofb":169,"./pad-ansix923":170,"./pad-iso10126":171,"./pad-iso97971":172,"./pad-nopadding":173,"./pad-zeropadding":174,"./pbkdf2":175,"./rabbit":177,"./rabbit-legacy":176,"./rc4":178,"./ripemd160":179,"./sha1":180,"./sha224":181,"./sha256":182,"./sha3":183,"./sha384":184,"./sha512":185,"./tripledes":186,"./x64-core":187}],163:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41163,7 +42197,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.lib.WordArray;
 
 }));
-},{"./core":154}],162:[function(require,module,exports){
+},{"./core":156}],164:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41432,7 +42466,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.MD5;
 
 }));
-},{"./core":154}],163:[function(require,module,exports){
+},{"./core":156}],165:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41511,7 +42545,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.mode.CFB;
 
 }));
-},{"./cipher-core":153,"./core":154}],164:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],166:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41628,7 +42662,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.mode.CTRGladman;
 
 }));
-},{"./cipher-core":153,"./core":154}],165:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],167:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41687,7 +42721,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.mode.CTR;
 
 }));
-},{"./cipher-core":153,"./core":154}],166:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],168:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41728,7 +42762,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.mode.ECB;
 
 }));
-},{"./cipher-core":153,"./core":154}],167:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],169:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41783,7 +42817,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.mode.OFB;
 
 }));
-},{"./cipher-core":153,"./core":154}],168:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],170:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41833,7 +42867,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.pad.Ansix923;
 
 }));
-},{"./cipher-core":153,"./core":154}],169:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],171:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41878,7 +42912,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.pad.Iso10126;
 
 }));
-},{"./cipher-core":153,"./core":154}],170:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],172:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41919,7 +42953,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.pad.Iso97971;
 
 }));
-},{"./cipher-core":153,"./core":154}],171:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],173:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41950,7 +42984,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.pad.NoPadding;
 
 }));
-},{"./cipher-core":153,"./core":154}],172:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],174:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -41996,7 +43030,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.pad.ZeroPadding;
 
 }));
-},{"./cipher-core":153,"./core":154}],173:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156}],175:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -42142,7 +43176,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.PBKDF2;
 
 }));
-},{"./core":154,"./hmac":159,"./sha1":178}],174:[function(require,module,exports){
+},{"./core":156,"./hmac":161,"./sha1":180}],176:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -42333,7 +43367,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.RabbitLegacy;
 
 }));
-},{"./cipher-core":153,"./core":154,"./enc-base64":155,"./evpkdf":157,"./md5":162}],175:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156,"./enc-base64":157,"./evpkdf":159,"./md5":164}],177:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -42526,7 +43560,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.Rabbit;
 
 }));
-},{"./cipher-core":153,"./core":154,"./enc-base64":155,"./evpkdf":157,"./md5":162}],176:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156,"./enc-base64":157,"./evpkdf":159,"./md5":164}],178:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -42666,7 +43700,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.RC4;
 
 }));
-},{"./cipher-core":153,"./core":154,"./enc-base64":155,"./evpkdf":157,"./md5":162}],177:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156,"./enc-base64":157,"./evpkdf":159,"./md5":164}],179:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -42934,7 +43968,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.RIPEMD160;
 
 }));
-},{"./core":154}],178:[function(require,module,exports){
+},{"./core":156}],180:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -43085,7 +44119,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA1;
 
 }));
-},{"./core":154}],179:[function(require,module,exports){
+},{"./core":156}],181:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -43166,7 +44200,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA224;
 
 }));
-},{"./core":154,"./sha256":180}],180:[function(require,module,exports){
+},{"./core":156,"./sha256":182}],182:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -43366,7 +44400,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA256;
 
 }));
-},{"./core":154}],181:[function(require,module,exports){
+},{"./core":156}],183:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -43690,7 +44724,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA3;
 
 }));
-},{"./core":154,"./x64-core":185}],182:[function(require,module,exports){
+},{"./core":156,"./x64-core":187}],184:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -43774,7 +44808,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA384;
 
 }));
-},{"./core":154,"./sha512":183,"./x64-core":185}],183:[function(require,module,exports){
+},{"./core":156,"./sha512":185,"./x64-core":187}],185:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -44098,7 +45132,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.SHA512;
 
 }));
-},{"./core":154,"./x64-core":185}],184:[function(require,module,exports){
+},{"./core":156,"./x64-core":187}],186:[function(require,module,exports){
 ;(function (root, factory, undef) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -44869,7 +45903,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS.TripleDES;
 
 }));
-},{"./cipher-core":153,"./core":154,"./enc-base64":155,"./evpkdf":157,"./md5":162}],185:[function(require,module,exports){
+},{"./cipher-core":155,"./core":156,"./enc-base64":157,"./evpkdf":159,"./md5":164}],187:[function(require,module,exports){
 ;(function (root, factory) {
 	if (typeof exports === "object") {
 		// CommonJS
@@ -45174,7 +46208,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 	return CryptoJS;
 
 }));
-},{"./core":154}],186:[function(require,module,exports){
+},{"./core":156}],188:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/utf8js v2.0.0 by @mathias */
 ;(function(root) {
@@ -45422,7 +46456,7 @@ var SolidityEvent = require("web3/lib/web3/event.js");
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],187:[function(require,module,exports){
+},{}],189:[function(require,module,exports){
 var Web3 = require('./lib/web3');
 
 // dont override global variable
@@ -45432,7 +46466,7 @@ if (typeof window !== 'undefined' && typeof window.Web3 === 'undefined') {
 
 module.exports = Web3;
 
-},{"./lib/web3":209}],188:[function(require,module,exports){
+},{"./lib/web3":211}],190:[function(require,module,exports){
 module.exports=[
   {
     "constant": true,
@@ -45688,7 +46722,7 @@ module.exports=[
   }
 ]
 
-},{}],189:[function(require,module,exports){
+},{}],191:[function(require,module,exports){
 module.exports=[
   {
     "constant": true,
@@ -45798,7 +46832,7 @@ module.exports=[
   }
 ]
 
-},{}],190:[function(require,module,exports){
+},{}],192:[function(require,module,exports){
 module.exports=[
   {
     "constant": false,
@@ -45946,7 +46980,7 @@ module.exports=[
   }
 ]
 
-},{}],191:[function(require,module,exports){
+},{}],193:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -45979,7 +47013,7 @@ SolidityTypeAddress.prototype.staticPartLength = function (name) {
 module.exports = SolidityTypeAddress;
 
 
-},{"./formatters":196,"./type":201}],192:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],194:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46011,7 +47045,7 @@ SolidityTypeBool.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeBool;
 
-},{"./formatters":196,"./type":201}],193:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],195:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46051,7 +47085,7 @@ SolidityTypeBytes.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeBytes;
 
-},{"./formatters":196,"./type":201}],194:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],196:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -46313,7 +47347,7 @@ var coder = new SolidityCoder([
 module.exports = coder;
 
 
-},{"./address":191,"./bool":192,"./bytes":193,"./dynamicbytes":195,"./formatters":196,"./int":197,"./real":199,"./string":200,"./uint":202,"./ureal":203}],195:[function(require,module,exports){
+},{"./address":193,"./bool":194,"./bytes":195,"./dynamicbytes":197,"./formatters":198,"./int":199,"./real":201,"./string":202,"./uint":204,"./ureal":205}],197:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46340,7 +47374,7 @@ SolidityTypeDynamicBytes.prototype.isDynamicType = function () {
 module.exports = SolidityTypeDynamicBytes;
 
 
-},{"./formatters":196,"./type":201}],196:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],198:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -46592,7 +47626,7 @@ module.exports = {
 };
 
 
-},{"../utils/config":205,"../utils/utils":207,"./param":198,"bignumber.js":151}],197:[function(require,module,exports){
+},{"../utils/config":207,"../utils/utils":209,"./param":200,"bignumber.js":153}],199:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46630,7 +47664,7 @@ SolidityTypeInt.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeInt;
 
-},{"./formatters":196,"./type":201}],198:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],200:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -46784,7 +47818,7 @@ SolidityParam.encodeList = function (params) {
 module.exports = SolidityParam;
 
 
-},{"../utils/utils":207}],199:[function(require,module,exports){
+},{"../utils/utils":209}],201:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46822,7 +47856,7 @@ SolidityTypeReal.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeReal;
 
-},{"./formatters":196,"./type":201}],200:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],202:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -46849,7 +47883,7 @@ SolidityTypeString.prototype.isDynamicType = function () {
 module.exports = SolidityTypeString;
 
 
-},{"./formatters":196,"./type":201}],201:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],203:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityParam = require('./param');
 
@@ -47096,7 +48130,7 @@ SolidityType.prototype.decode = function (bytes, offset, name) {
 
 module.exports = SolidityType;
 
-},{"./formatters":196,"./param":198}],202:[function(require,module,exports){
+},{"./formatters":198,"./param":200}],204:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -47134,7 +48168,7 @@ SolidityTypeUInt.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeUInt;
 
-},{"./formatters":196,"./type":201}],203:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],205:[function(require,module,exports){
 var f = require('./formatters');
 var SolidityType = require('./type');
 
@@ -47172,7 +48206,7 @@ SolidityTypeUReal.prototype.staticPartLength = function (name) {
 
 module.exports = SolidityTypeUReal;
 
-},{"./formatters":196,"./type":201}],204:[function(require,module,exports){
+},{"./formatters":198,"./type":203}],206:[function(require,module,exports){
 'use strict';
 
 // go env doesn't have and need XMLHttpRequest
@@ -47183,7 +48217,7 @@ if (typeof XMLHttpRequest === 'undefined') {
 }
 
 
-},{}],205:[function(require,module,exports){
+},{}],207:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -47264,7 +48298,7 @@ module.exports = {
 };
 
 
-},{"bignumber.js":151}],206:[function(require,module,exports){
+},{"bignumber.js":153}],208:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -47304,7 +48338,7 @@ module.exports = function (value, options) {
 };
 
 
-},{"crypto-js":160,"crypto-js/sha3":181}],207:[function(require,module,exports){
+},{"crypto-js":162,"crypto-js/sha3":183}],209:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -47903,12 +48937,12 @@ module.exports = {
     isJson: isJson
 };
 
-},{"./sha3.js":206,"bignumber.js":151,"utf8":186}],208:[function(require,module,exports){
+},{"./sha3.js":208,"bignumber.js":153,"utf8":188}],210:[function(require,module,exports){
 module.exports={
     "version": "0.17.0-alpha"
 }
 
-},{}],209:[function(require,module,exports){
+},{}],211:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48058,7 +49092,7 @@ Web3.prototype.createBatch = function () {
 module.exports = Web3;
 
 
-},{"./utils/sha3":206,"./utils/utils":207,"./version.json":208,"./web3/batch":211,"./web3/extend":215,"./web3/httpprovider":219,"./web3/iban":220,"./web3/ipcprovider":221,"./web3/methods/db":224,"./web3/methods/eth":225,"./web3/methods/net":226,"./web3/methods/personal":227,"./web3/methods/shh":228,"./web3/property":231,"./web3/requestmanager":232,"./web3/settings":233,"bignumber.js":151}],210:[function(require,module,exports){
+},{"./utils/sha3":208,"./utils/utils":209,"./version.json":210,"./web3/batch":213,"./web3/extend":217,"./web3/httpprovider":221,"./web3/iban":222,"./web3/ipcprovider":223,"./web3/methods/db":226,"./web3/methods/eth":227,"./web3/methods/net":228,"./web3/methods/personal":229,"./web3/methods/shh":230,"./web3/property":233,"./web3/requestmanager":234,"./web3/settings":235,"bignumber.js":153}],212:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48148,7 +49182,7 @@ AllSolidityEvents.prototype.attachToContract = function (contract) {
 module.exports = AllSolidityEvents;
 
 
-},{"../utils/sha3":206,"../utils/utils":207,"./event":214,"./filter":216,"./formatters":217,"./methods/watches":229}],211:[function(require,module,exports){
+},{"../utils/sha3":208,"../utils/utils":209,"./event":216,"./filter":218,"./formatters":219,"./methods/watches":231}],213:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48216,7 +49250,7 @@ Batch.prototype.execute = function () {
 module.exports = Batch;
 
 
-},{"./errors":213,"./jsonrpc":222}],212:[function(require,module,exports){
+},{"./errors":215,"./jsonrpc":224}],214:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48516,7 +49550,7 @@ var Contract = function (eth, abi, address) {
 
 module.exports = ContractFactory;
 
-},{"../solidity/coder":194,"../utils/utils":207,"./allevents":210,"./event":214,"./function":218}],213:[function(require,module,exports){
+},{"../solidity/coder":196,"../utils/utils":209,"./allevents":212,"./event":216,"./function":220}],215:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48556,7 +49590,7 @@ module.exports = {
 };
 
 
-},{}],214:[function(require,module,exports){
+},{}],216:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -48766,7 +49800,7 @@ SolidityEvent.prototype.attachToContract = function (contract) {
 module.exports = SolidityEvent;
 
 
-},{"../solidity/coder":194,"../utils/sha3":206,"../utils/utils":207,"./filter":216,"./formatters":217,"./methods/watches":229}],215:[function(require,module,exports){
+},{"../solidity/coder":196,"../utils/sha3":208,"../utils/utils":209,"./filter":218,"./formatters":219,"./methods/watches":231}],217:[function(require,module,exports){
 var formatters = require('./formatters');
 var utils = require('./../utils/utils');
 var Method = require('./method');
@@ -48816,7 +49850,7 @@ var extend = function (web3) {
 module.exports = extend;
 
 
-},{"./../utils/utils":207,"./formatters":217,"./method":223,"./property":231}],216:[function(require,module,exports){
+},{"./../utils/utils":209,"./formatters":219,"./method":225,"./property":233}],218:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -49052,7 +50086,7 @@ Filter.prototype.get = function (callback) {
 module.exports = Filter;
 
 
-},{"../utils/utils":207,"./formatters":217}],217:[function(require,module,exports){
+},{"../utils/utils":209,"./formatters":219}],219:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -49357,7 +50391,7 @@ module.exports = {
 };
 
 
-},{"../utils/config":205,"../utils/utils":207,"./iban":220}],218:[function(require,module,exports){
+},{"../utils/config":207,"../utils/utils":209,"./iban":222}],220:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -49606,7 +50640,7 @@ SolidityFunction.prototype.attachToContract = function (contract) {
 module.exports = SolidityFunction;
 
 
-},{"../solidity/coder":194,"../utils/sha3":206,"../utils/utils":207,"./formatters":217}],219:[function(require,module,exports){
+},{"../solidity/coder":196,"../utils/sha3":208,"../utils/utils":209,"./formatters":219}],221:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -49750,7 +50784,7 @@ HttpProvider.prototype.isConnected = function() {
 module.exports = HttpProvider;
 
 
-},{"./errors":213,"xmlhttprequest":204}],220:[function(require,module,exports){
+},{"./errors":215,"xmlhttprequest":206}],222:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -49979,7 +51013,7 @@ Iban.prototype.toString = function () {
 module.exports = Iban;
 
 
-},{"bignumber.js":151}],221:[function(require,module,exports){
+},{"bignumber.js":153}],223:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50188,7 +51222,7 @@ IpcProvider.prototype.sendAsync = function (payload, callback) {
 module.exports = IpcProvider;
 
 
-},{"../utils/utils":207,"./errors":213}],222:[function(require,module,exports){
+},{"../utils/utils":209,"./errors":215}],224:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50275,7 +51309,7 @@ Jsonrpc.toBatchPayload = function (messages) {
 module.exports = Jsonrpc;
 
 
-},{}],223:[function(require,module,exports){
+},{}],225:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50442,7 +51476,7 @@ Method.prototype.request = function () {
 module.exports = Method;
 
 
-},{"../utils/utils":207,"./errors":213}],224:[function(require,module,exports){
+},{"../utils/utils":209,"./errors":215}],226:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50510,7 +51544,7 @@ var methods = function () {
 
 module.exports = DB;
 
-},{"../method":223}],225:[function(require,module,exports){
+},{"../method":225}],227:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50859,7 +51893,7 @@ Eth.prototype.isSyncing = function (callback) {
 module.exports = Eth;
 
 
-},{"../../utils/config":205,"../../utils/utils":207,"../contract":212,"../filter":216,"../formatters":217,"../iban":220,"../method":223,"../namereg":230,"../property":231,"../syncing":234,"../transfer":235,"./watches":229}],226:[function(require,module,exports){
+},{"../../utils/config":207,"../../utils/utils":209,"../contract":214,"../filter":218,"../formatters":219,"../iban":222,"../method":225,"../namereg":232,"../property":233,"../syncing":236,"../transfer":237,"./watches":231}],228:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -50913,7 +51947,7 @@ var properties = function () {
 
 module.exports = Net;
 
-},{"../../utils/utils":207,"../property":231}],227:[function(require,module,exports){
+},{"../../utils/utils":209,"../property":233}],229:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51008,7 +52042,7 @@ var properties = function () {
 
 module.exports = Personal;
 
-},{"../formatters":217,"../method":223,"../property":231}],228:[function(require,module,exports){
+},{"../formatters":219,"../method":225,"../property":233}],230:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51096,7 +52130,7 @@ var methods = function () {
 module.exports = Shh;
 
 
-},{"../filter":216,"../formatters":217,"../method":223,"./watches":229}],229:[function(require,module,exports){
+},{"../filter":218,"../formatters":219,"../method":225,"./watches":231}],231:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51212,7 +52246,7 @@ module.exports = {
 };
 
 
-},{"../method":223}],230:[function(require,module,exports){
+},{"../method":225}],232:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51253,7 +52287,7 @@ module.exports = {
 };
 
 
-},{"../contracts/GlobalRegistrar.json":188,"../contracts/ICAPRegistrar.json":189}],231:[function(require,module,exports){
+},{"../contracts/GlobalRegistrar.json":190,"../contracts/ICAPRegistrar.json":191}],233:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51399,7 +52433,7 @@ Property.prototype.request = function () {
 module.exports = Property;
 
 
-},{"../utils/utils":207}],232:[function(require,module,exports){
+},{"../utils/utils":209}],234:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51666,7 +52700,7 @@ RequestManager.prototype.poll = function () {
 module.exports = RequestManager;
 
 
-},{"../utils/config":205,"../utils/utils":207,"./errors":213,"./jsonrpc":222}],233:[function(require,module,exports){
+},{"../utils/config":207,"../utils/utils":209,"./errors":215,"./jsonrpc":224}],235:[function(require,module,exports){
 
 
 var Settings = function () {
@@ -51677,7 +52711,7 @@ var Settings = function () {
 module.exports = Settings;
 
 
-},{}],234:[function(require,module,exports){
+},{}],236:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51772,7 +52806,7 @@ IsSyncing.prototype.stopWatching = function () {
 module.exports = IsSyncing;
 
 
-},{"../utils/utils":207,"./formatters":217}],235:[function(require,module,exports){
+},{"../utils/utils":209,"./formatters":219}],237:[function(require,module,exports){
 /*
     This file is part of web3.js.
 
@@ -51866,10 +52900,12 @@ var deposit = function (eth, from, to, value, client, callback) {
 module.exports = transfer;
 
 
-},{"../contracts/SmartExchange.json":190,"./iban":220}],236:[function(require,module,exports){
+},{"../contracts/SmartExchange.json":192,"./iban":222}],238:[function(require,module,exports){
 module.exports = {
-  "HumanStandardToken": require("/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardToken.sol.js"),
+  "Candidate": require("/Users/tigranavakyan/code/votingsucks/build/contracts/Candidate.sol.js"),
+  "CandidateRegistry": require("/Users/tigranavakyan/code/votingsucks/build/contracts/CandidateRegistry.sol.js"),
   "ConvertLib": require("/Users/tigranavakyan/code/votingsucks/build/contracts/ConvertLib.sol.js"),
+  "HumanStandardToken": require("/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardToken.sol.js"),
   "HumanStandardTokenFactory": require("/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardTokenFactory.sol.js"),
   "MetaCoin": require("/Users/tigranavakyan/code/votingsucks/build/contracts/MetaCoin.sol.js"),
   "Migrations": require("/Users/tigranavakyan/code/votingsucks/build/contracts/Migrations.sol.js"),
@@ -51880,12 +52916,12 @@ module.exports = {
   "Token": require("/Users/tigranavakyan/code/votingsucks/build/contracts/Token.sol.js"),
   "TokenTester": require("/Users/tigranavakyan/code/votingsucks/build/contracts/TokenTester.sol.js"),
   "VotingAgainstToken": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstToken.sol.js"),
-  "VotingAgainstTokenFactory": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstTokenFactory.sol.js"),
   "VotingForToken": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForToken.sol.js"),
+  "VotingAgainstTokenFactory": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstTokenFactory.sol.js"),
   "VotingForTokenFactory": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForTokenFactory.sol.js"),
   "VotingTokenFactory": require("/Users/tigranavakyan/code/votingsucks/build/contracts/VotingTokenFactory.sol.js"),
 };
-},{"/Users/tigranavakyan/code/votingsucks/build/contracts/ConvertLib.sol.js":135,"/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardToken.sol.js":136,"/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardTokenFactory.sol.js":137,"/Users/tigranavakyan/code/votingsucks/build/contracts/MetaCoin.sol.js":138,"/Users/tigranavakyan/code/votingsucks/build/contracts/Migrations.sol.js":139,"/Users/tigranavakyan/code/votingsucks/build/contracts/SampleRecipientSuccess.sol.js":140,"/Users/tigranavakyan/code/votingsucks/build/contracts/SampleRecipientThrow.sol.js":141,"/Users/tigranavakyan/code/votingsucks/build/contracts/StandardToken.sol.js":142,"/Users/tigranavakyan/code/votingsucks/build/contracts/Standard_Token.sol.js":143,"/Users/tigranavakyan/code/votingsucks/build/contracts/Token.sol.js":144,"/Users/tigranavakyan/code/votingsucks/build/contracts/TokenTester.sol.js":145,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstToken.sol.js":146,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstTokenFactory.sol.js":147,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForToken.sol.js":148,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForTokenFactory.sol.js":149,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingTokenFactory.sol.js":150}]},{},[236])(236)
+},{"/Users/tigranavakyan/code/votingsucks/build/contracts/Candidate.sol.js":135,"/Users/tigranavakyan/code/votingsucks/build/contracts/CandidateRegistry.sol.js":136,"/Users/tigranavakyan/code/votingsucks/build/contracts/ConvertLib.sol.js":137,"/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardToken.sol.js":138,"/Users/tigranavakyan/code/votingsucks/build/contracts/HumanStandardTokenFactory.sol.js":139,"/Users/tigranavakyan/code/votingsucks/build/contracts/MetaCoin.sol.js":140,"/Users/tigranavakyan/code/votingsucks/build/contracts/Migrations.sol.js":141,"/Users/tigranavakyan/code/votingsucks/build/contracts/SampleRecipientSuccess.sol.js":142,"/Users/tigranavakyan/code/votingsucks/build/contracts/SampleRecipientThrow.sol.js":143,"/Users/tigranavakyan/code/votingsucks/build/contracts/StandardToken.sol.js":144,"/Users/tigranavakyan/code/votingsucks/build/contracts/Standard_Token.sol.js":145,"/Users/tigranavakyan/code/votingsucks/build/contracts/Token.sol.js":146,"/Users/tigranavakyan/code/votingsucks/build/contracts/TokenTester.sol.js":147,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstToken.sol.js":148,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingAgainstTokenFactory.sol.js":149,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForToken.sol.js":150,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingForTokenFactory.sol.js":151,"/Users/tigranavakyan/code/votingsucks/build/contracts/VotingTokenFactory.sol.js":152}]},{},[238])(238)
 });
 
 //// TRUFFLE BOOTSTRAP                                          
@@ -51918,7 +52954,7 @@ window.addEventListener('load', function() {
 
                                                                 
 
-  [ConvertLib,HumanStandardToken,HumanStandardTokenFactory,MetaCoin,Migrations,SampleRecipientSuccess,StandardToken,SampleRecipientThrow,Standard_Token,Token,TokenTester,VotingAgainstToken,VotingAgainstTokenFactory,VotingForToken,VotingForTokenFactory,VotingTokenFactory].forEach(function(contract) {         
+  [Candidate,CandidateRegistry,ConvertLib,HumanStandardToken,HumanStandardTokenFactory,Migrations,MetaCoin,SampleRecipientSuccess,SampleRecipientThrow,StandardToken,Standard_Token,Token,TokenTester,VotingAgainstToken,VotingAgainstTokenFactory,VotingForToken,VotingForTokenFactory,VotingTokenFactory].forEach(function(contract) {         
 
     contract.setProvider(window.web3.currentProvider);          
 

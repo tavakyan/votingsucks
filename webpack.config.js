@@ -24,11 +24,11 @@ var config = getConfig({
   html: function (context) {
     return {
       'index.html': context.defaultTemplate({
-        title: 'auth0 React Sample',
+        title: 'Voting Sucks',
         publicPath: isDev ? 'http://localhost:3000/' : '',
         meta: {
-          'name': 'auth0 React Sample',
-          'description': 'A minimal reactJS sample application showing auth0 integration'
+          'name': 'Voting Sucks',
+          'description': 'A descentralized voting web app on the Ethereum blockchain.'
         }
       })
     }

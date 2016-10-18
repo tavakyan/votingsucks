@@ -30,25 +30,16 @@ export class Home extends React.Component {
     this.context.router.push('/login');
   }
 
-  // init_web3(){
-  //   if (typeof web3 !== 'undefined') {
-  //     web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
-  //     alert('undefined web3');
-  //   } else {
-  //     // set the provider you want from Web3.providers
-  //     web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
-  //     alert('set the desired provider');
-  //   }
-  //   return web3;
-  // }
-
   submit(){
-    // let web3 = init_web3();
     var web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
 
+    // validate input
 
+    // create tokens through factory using identity
 
-    alert('submit');
+    // submit ballot (transfer tokens to each candidate)
+
+    alert('Vote Submitted!');
   }
 
   render(){

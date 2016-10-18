@@ -10,7 +10,6 @@ contract VotingForTokenFactory {
   }
 
   function create() returns (address sender) {
-
     VotingForToken newToken = (new VotingForToken());
     created[msg.sender].push(address(newToken));
     isVotingForToken[address(newToken)] = true;
